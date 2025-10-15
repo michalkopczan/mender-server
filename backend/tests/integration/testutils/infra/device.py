@@ -180,7 +180,7 @@ class MenderDevice:
         waited = -1
         t0 = int(time.time())
         raise_exception = None
-        for _ in redo.retrier(max_sleeptime=wait, attempts=wait, sleeptime=1):
+        for _ in redo.retrier(max_sleeptime=wait, attempts=1, sleeptime=1):
             try:
                 self.run("true", hide=True, wait=wait)
                 raise_exception = None
