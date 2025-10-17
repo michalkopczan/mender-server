@@ -260,6 +260,25 @@ class RebootDetector:
             if type is None:
                 raise
 
+    def get_listen_queue(self, port):
+        with open("/proc/net/tcp", "r") as f:
+            next(f)  # skip header
+            for line in f:
+                fields = line.split()
+                local_address = fields[1]
+                state = fields[3]
+                tx_rx = fields[4].split(":")
+
+                # Parse address
+                addr_hex, port_hex = local_address.split(":")
+                local_port = int(port_hex, 16)
+
+                if local_port == port and state == "0A":  # 0A = LISTEN
+                    tx_queue = int(tx_rx[0], 16)
+                    rx_queue = int(tx_rx[1], 16)
+                    return tx_queue, rx_queue
+        return None, None
+
     def verify_reboot_performed_impl(self, max_wait, number_of_reboots=1):
         up = True
         reboot_count = 0
@@ -269,10 +288,19 @@ class RebootDetector:
                 self.server.settimeout(start_time + max_wait - time.time())
                 connection, _ = self.server.accept()
             except socket.timeout:
-                logger.info("Client did not reboot in %d seconds", max_wait)
+                tx, rx = self.get_listen_queue(self.port)
+                logger.info("Client did not reboot in %d seconds. Listening queue: tx_queue=%d, rx_queue=%d", max_wait, tx, rx)
+                logger.error("")
                 return False
 
-            message = connection.recv(4096).decode().strip()
+            connection.settimeout(6)  # 10 seconds max for recv()
+            try:
+                message = connection.recv(4096).decode().strip()
+            except socket.timeout:
+                logger.warning("Client connected but did not send data in time")
+                connection.close()
+                continue
+            #message = connection.recv(4096).decode().strip()
             connection.close()
 
             if message == "shutdown":
